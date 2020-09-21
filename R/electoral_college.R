@@ -7,24 +7,25 @@ library(corrplot)
 
 #data pull
 pe_2016 <- read.csv(here::here("Data/Presidential Election Data (2016).csv"))
+pe_2016_m_dc <- pe_2016 %>% filter(State != "District of Columbia")
 colnames(pe_2016)
 summary(pe_2016)
 
 pe_corr_df <- pe_2016 %>% select("VoteMarginPercentABS", "VoteMarginPercent", "TurnOut", "RuralPopulation","SmallTownPopulation", "SuburbPopulation", "UrbanPopulation","White", "Black", "Hispanic","AmericanIndian.AlaskaNative", "Asian", "NativeHawaiian.OtherPacificIslander", "TwoOrMoreRaces", "HighSchool", "BachelorsDegree","AdvancedDegree")
 
 
-white_m <- mean(pe_2016$White)
-white_sd <- sd(pe_2016$White)
-
 #analysis
 turnout_lm <- lm(TurnOut ~
                    VoteMarginPercentABS,
-  data = pe_2016
+  data = pe_2016_m_dc
 )
 summary(turnout_lm)
 
+
+
+
 margin_lm <- lm(VoteMarginPercent ~
-                  ((White / white_m) * white_sd) +
+                  White +
                   Black +
                   Hispanic +
                   UrbanPopulation +
@@ -35,3 +36,100 @@ summary(margin_lm)
 
 pe_corr <- cor(pe_corr_df)
 corrplot(pe_corr)
+
+
+#model creation 
+pva_t <- 
+  pva %>% 
+  dplyr::select(HOMEOWNER, HIT, MALEVET, VIETVETS, WWIIVETS, LOCALGOV, STATEGOV, FEDGOV, CARDPROM, NUMPROM, CARDPM12, NUMPRM12, NGIFTALL, CARDGIFT, MINRAMNT, MINRDATE_T, MAXRAMNT, MAXRDATE_T, LASTGIFT, AVGGIFT, CONTROLN, HPHONE_D, CLUSTER2, CHILDREN, AGE, GIFTAMNT, TOTALGIFTAMNT) %>% 
+  initial_split()
+
+#train and test
+train <- training(pva_t) # training dataset
+test <- testing(pva_t) # testing dataset
+
+#recipes
+mod_rec_gift_amt <- recipe(GIFTAMNT~ ., data = train) %>% 
+  step_center(
+    HOMEOWNER, HIT, MALEVET, VIETVETS, WWIIVETS, LOCALGOV, STATEGOV, FEDGOV, CARDPROM, NUMPROM, CARDPM12, NUMPRM12, NGIFTALL, CARDGIFT, MINRAMNT, MINRDATE_T, MAXRAMNT, MAXRDATE_T, LASTGIFT, AVGGIFT, CONTROLN, HPHONE_D, CLUSTER2, CHILDREN, AGE
+  ) %>%
+  step_scale(
+    HOMEOWNER, HIT, MALEVET, VIETVETS, WWIIVETS, LOCALGOV, STATEGOV, FEDGOV, CARDPROM, NUMPROM, CARDPM12, NUMPRM12, NGIFTALL, CARDGIFT, MINRAMNT, MINRDATE_T, MAXRAMNT, MAXRDATE_T, LASTGIFT, AVGGIFT, CONTROLN, HPHONE_D, CLUSTER2, CHILDREN, AGE
+  )
+
+# training model
+# all variables
+gift_amt_lm_vars <- qc(HOMEOWNER, STATEGOV, NGIFTALL, LASTGIFT, AVGGIFT, CLUSTER2)
+gift_amt_function_var <- "GIFTAMNT"
+glm_formula <- as.formula(paste(sprintf("%s ~", gift_amt_function_var), paste(gift_amt_lm_vars [!gift_amt_lm_vars  %in% "y"], collapse = " + ")))
+
+#bake data
+train_prep <- prep(mod_rec_gift_amt, training = train)
+train_data <- bake(train_prep, train)
+
+# all variables function
+gift_amount_lm <- lm(
+  formula = glm_formula
+  , data = train_data
+)
+
+
+# quick summary
+summary(gift_amount_lm)
+
+# test model
+test_data <- bake(train_prep, test)
+
+test_p <- predict(gift_amount_lm, test_data)
+test_predict <- cbind(test_data, test_p)
+test_sse <- (test_predict$GIFTAMNT - test_predict$test_p)^2
+test_sst <- (test_predict$GIFTAMNT - mean(test_predict$GIFTAMNT))^2
+test_r2 <- 1 - (sum(test_sse)/sum(test_sst))
+test_r2
+
+
+# k means model
+
+#recipe
+
+mod_rec_k_means <- recipe(TOTALGIFTAMNT ~ ., data = pva) %>% 
+  step_center(
+    HOMEOWNER, HIT, MALEVET, VIETVETS, WWIIVETS, LOCALGOV, STATEGOV, FEDGOV, CARDPROM, NUMPROM, CARDPM12, NUMPRM12, MINRAMNT, MINRDATE_T, MAXRAMNT, MAXRDATE_T, LASTGIFT, CONTROLN, HPHONE_D, CLUSTER2, CHILDREN, AGE, TOTALGIFTAMNT
+  ) %>%
+  step_scale(
+    HOMEOWNER, HIT, MALEVET, VIETVETS, WWIIVETS, LOCALGOV, STATEGOV, FEDGOV, CARDPROM, NUMPROM, CARDPM12, NUMPRM12, MINRAMNT, MINRDATE_T, MAXRAMNT, MAXRDATE_T, LASTGIFT, CONTROLN, HPHONE_D, CLUSTER2, CHILDREN, AGE, TOTALGIFTAMNT
+  )
+
+mod_rec_pe_2016 <- recipe(VoteMarginPercent ~ ., data = pe_2016) %>% 
+  step_center(
+    VoteMarginPercentABS, VoteMarginPercent, TurnOut, RuralPopulation, SmallTownPopulation, SuburbPopulation, UrbanPopulation, White, Black, Hispanic, AmericanIndian.AlaskaNative, Asian, NativeHawaiian.OtherPacificIslander, TwoOrMoreRaces, HighSchool, BachelorsDegree, AdvancedDegree
+    ) %>% 
+  step_scale(
+    VoteMarginPercentABS, VoteMarginPercent, TurnOut, RuralPopulation, SmallTownPopulation, SuburbPopulation, UrbanPopulation, White, Black, Hispanic, AmericanIndian.AlaskaNative, Asian, NativeHawaiian.OtherPacificIslander, TwoOrMoreRaces, HighSchool, BachelorsDegree, AdvancedDegree
+    )
+
+
+k_prep <- prep(mod_rec_k_means, training = pva)
+
+cluster_prep <- prep(mod_rec_pe_2016, training = pe_2016)
+cluster_table <- bake(cluster_prep, pe_2016)
+cluster_table <- cluster_table %>% dplyr::select(VoteMarginPercent, TurnOut, RuralPopulation, SmallTownPopulation, SuburbPopulation, UrbanPopulation, White, Black, Hispanic, AmericanIndian.AlaskaNative, Asian, NativeHawaiian.OtherPacificIslander, TwoOrMoreRaces, HighSchool, BachelorsDegree, AdvancedDegree)
+
+k_table <- bake(k_prep, pva)
+k_table <- k_table %>% dplyr::select(HOMEOWNER, HIT, MALEVET, VIETVETS, WWIIVETS, LOCALGOV, STATEGOV, FEDGOV, CARDPROM, NUMPROM, CARDPM12, NUMPRM12, MINRAMNT, MINRDATE_T, MAXRAMNT, MAXRDATE_T, LASTGIFT, CONTROLN, HPHONE_D, CLUSTER2, CHILDREN, AGE, TOTALGIFTAMNT)
+colnames(k_table)
+
+# model creation
+
+state_cluster_mod <- kmeans(cluster_table, centers = 8, nstart = 10000)
+state_cluster_mod
+
+# build table
+
+state_cluster_table <- cbind(pe_2016, state_cluster_mod$cluster)
+
+pva_clusters <- cbind(pva, k_mod$cluster)
+
+
+
+
