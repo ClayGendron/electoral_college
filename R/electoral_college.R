@@ -8,6 +8,7 @@ library(corrplot)
 #data pull
 pe_2016 <- read.csv(here::here("Data/Presidential Election Data (2016).csv"))
 pe_2016_m_dc <- pe_2016 %>% filter(State != "District of Columbia")
+pe_2016_m_dc_hw <- pe_2016 %>% filter(State != "District of Columbia") %>%  filter(State != "Hawaii") 
 colnames(pe_2016)
 summary(pe_2016)
 
@@ -112,8 +113,8 @@ mod_rec_pe_2016 <- recipe(VoteMarginPercent ~ ., data = pe_2016) %>%
 k_prep <- prep(mod_rec_k_means, training = pva)
 
 cluster_prep <- prep(mod_rec_pe_2016, training = pe_2016)
-cluster_table <- bake(cluster_prep, pe_2016)
-cluster_table <- cluster_table %>% dplyr::select(VoteMarginPercent, TurnOut, RuralPopulation, SmallTownPopulation, SuburbPopulation, UrbanPopulation, White, Black, Hispanic, AmericanIndian.AlaskaNative, Asian, NativeHawaiian.OtherPacificIslander, TwoOrMoreRaces, HighSchool, BachelorsDegree, AdvancedDegree)
+cluster_table <- bake(cluster_prep, pe_2016_m_dc_hw)
+cluster_table <- cluster_table %>% dplyr::select(VoteMarginPercent, RuralPopulation, UrbanPopulation, White, Black, Hispanic, BachelorsDegree)
 
 k_table <- bake(k_prep, pva)
 k_table <- k_table %>% dplyr::select(HOMEOWNER, HIT, MALEVET, VIETVETS, WWIIVETS, LOCALGOV, STATEGOV, FEDGOV, CARDPROM, NUMPROM, CARDPM12, NUMPRM12, MINRAMNT, MINRDATE_T, MAXRAMNT, MAXRDATE_T, LASTGIFT, CONTROLN, HPHONE_D, CLUSTER2, CHILDREN, AGE, TOTALGIFTAMNT)
@@ -121,12 +122,14 @@ colnames(k_table)
 
 # model creation
 
-state_cluster_mod <- kmeans(cluster_table, centers = 8, nstart = 10000)
+state_cluster_mod <- kmeans(cluster_table, centers = 5, nstart = 10000)
 state_cluster_mod
 
 # build table
 
-state_cluster_table <- cbind(pe_2016, state_cluster_mod$cluster)
+state_cluster_table <- cbind(pe_2016_m_dc_hw, state_cluster_mod$cluster)
+names(state_cluster_table)[32] <- "Cluster"
+st <- state_cluster_table %>% select(State,VoteMarginPercent,Cluster)
 
 pva_clusters <- cbind(pva, k_mod$cluster)
 
